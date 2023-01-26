@@ -1,0 +1,371 @@
+---
+title: "Project 2: Housing Prices"
+author: "Cole Odegard"
+date: 'November 16th 2022'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, message = FALSE, warning = FALSE, cache = TRUE, scientific = FALSE)
+```
+
+## Introduction
+
+&emsp; The goal of this project is to analyze house price information from Seattle, Washington and determine what factors influence house price. These factors include square footage, lot size, zip code, etc. Once our model is built we will use it to predict the price of houses that we do not have data for, and then for a new subset of housing data that we did not build the model on. Before building a model we will clean the data and narrow down factors that do not influence house prices. After narrowing down the data set, a combination of multiple and polynomial regression will likely be used to find the best model. Finally, we will summarize the model with graphs and statistics to quantify its performance.   
+
+&emsp;  Before looking at the data itself it is helpful to identify  factors that we should pay special attention to. *Planning Tank* identifies, location, amenities, house size & layout and broad economic factors as most influential to house prices. It gives pricing information from the realtor's perspective, and differs slightly from *Investopedia*, which is a more economically focused site. Robert Stammers from *Investopedia* argues that it is important to look at house location, but more specific locations within a neighborhood can heavily influence housing prices (ex: busy road vs quiet cul-du-sac). Additionally, Stammers argues that less tangible factors, such as the quality of surrounding schools, hospitals, infrastructure and retail surrounding the house can have a great impact on house prices.  
+
+&emsp;  These first two sources identify roughly a half dozen tangible **local** factors, but, as Reyna Gobel from *Investopedia* points out, sometimes national economic measures have much more important implications when calculating the value of a house. Gobel identifies high interest rates, rising unemployment and possible future economic conditions as weighing heavily on home prices. This is based on the premise that a house at a 4% interest rate is less valuable than a house at a 9% interest rate, which economically is true. With this in mind we will have to accept a certain degree of uncertainty in our model based on numerous factors that are harder to quantify. Now that we have a slight grasp on the broad factors that affect home prices it is time to dive into and clean the data itself.
+
+
+## Data Cleaning & Visualization
+
+```{r}
+library(tidyverse)
+library(dplyr)
+house<- read.csv(file.choose())
+write.csv(house, "house")
+#summary(house)
+house1 <- house %>% select(-lat)
+house2<- house1 %>% select(-long)
+house3<- house2 %>% select(-sqft_lot)
+house4<- house3 %>% select(-yr_renovated)
+house5<- house4 %>% select(-condition)
+
+#Built in the last 10 yrs
+#Lot in the top 10% of sizes
+#bedrooms^2
+#bathrooms^2
+#sqrt living sqft
+
+house6 <- house5 %>% mutate(sqft_liv_chg = sqft_living - sqft_living15)
+house6 <- house6[!house6$sqft_liv_chg == "NULL",]
+house6 <- house6 %>% select(-sqft_living15)
+house7 <- house6 %>% mutate(bathsqr = bathrooms^2, bedsqr = bedrooms^2, rootLiving = sqrt(sqft_living), newBuild = ifelse(2015-yr_built <= 10, "NEW", ifelse(2015-yr_built <= 30, "AGING", "OLD")))
+house7$zipcode = as.factor(house7$zipcode)
+write.csv(house7, "house_cleaned")
+modelNew <- lm(price ~.,house7)
+#summary(modelNew)
+houseNew <- house7 %>% filter(newBuild == "NEW")
+modelNew1 <- lm(price~sqft_living,houseNew)
+#summary(modelNew1)
+houseAging <- house7 %>% filter(newBuild == "AGING")
+modelAging1 <- lm(price~sqft_living,houseAging)
+#summary(modelAging1)
+houseOld <- house7 %>% filter(newBuild == "OLD")
+modelOld1 <- lm(price~sqft_living,houseOld)
+#summary(modelOld1)
+
+ggplot(data = house7, aes(x = sqft_living, y = price, color = newBuild)) + geom_point() + geom_smooth(method = lm) + 
+  labs(y = "Home Price ($)", x = "House Square Footage", title = "Figure 1.1: Square Footage vs House Price by Home Age")
+
+```
+
+&emsp;  Figure 1.1 shows the correlation between square footage and the price of a home divided into new, middle age and old homes. For the purposes of the model, old homes were defined as built more than 30 years ago, new homes were built within the last 10 years and 10-30 year old homes were "aging." We can see that the correlation between SQFT and Price is weakest for the oldest houses in our dataset. This is important background for the rest of our analysis because older houses are affected more by the "intangibles" discussed in our introduction than newer houses. This trend also applies to other variables.   
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+house<- read.csv("house")
+house7<- read.csv("house_cleaned")
+ggplot(data = house7, aes(x = bedrooms, y = price)) + geom_jitter(color = "blue") + geom_smooth(method = lm) +
+  labs(y = "Home Price ($)", x = "Bedrooms", title = "Figure 1.2: Bedrooms vs House Price")
+
+house8<- house7 %>% mutate(highbed= ifelse(bedrooms >= 5, "5+ Beds", "<5 Beds"))
+
+ggplot(data = house8, aes(x = bedrooms, y = price, color = highbed)) + geom_jitter() + geom_smooth(method =lm) +
+  labs(y = "Home Price ($)", x = "Bedrooms", title = "Figure 1.3: Bedrooms vs House Price by Number of Beds", color = "Number of Beds")
+
+#house8<- house7 %>% mutate(highbath= ifelse(bathrooms >= 5, "5+ Baths", "<5 Baths"))
+
+#ggplot(data = house8, aes(x = bathrooms, y = price, color = highbath)) + geom_jitter() + #geom_smooth(method =lm) +
+#  labs(y = "Home Price ($)", x = "Bathrooms", title = "Figure 1.3: Baths vs House Price by #Number of Baths", color = "Number of Baths")
+```
+
+&emsp;  Figure 1.2 outlines the correlation between the number of bedrooms and the price of a home. This correlation is one of the strongest of all the variables we have, however there is an important caveat. Figure 1.3 shows this caveat, the trend of house prices increasing is only valid for homes with less than 5 bedrooms. This makes sense when we remember our introductory analysis, which discusses the plethora of less tangible features that make the difference in larger, more expensive homes. These homes might be worth more because of their location in a gated community or a movie theater in their basements, which are not necessarily factors we can quantify at least in this analysis.  
+
+&emsp;  The housing data set used to create our model starts with 20 variables. Latitude and Longitude will not be useful for this dataset because all of the houses are located in a relatively small area in King County, WA. 
+&emsp; Without Latitude and Longitude, we eliminated variables one by one based on their respective p-values, starting with zipcode (p-value: .94), square footage of the lot (p-value: .75), year the house was renovated (p-value: .29), condition of the house (p-value: .14), and number of floors (p-value: .12).
+
+&emsp;  After narrowing down our data set to 15 variables we added 5 new variables based on factors that we already know. These factors are number of bedrooms and bathrooms squared, square root of living area, square footage change (if the house underwent renovations), and a categorical variable to describe the age of the home. The 5 new variables, when added to our model, increased our R-squared value by .04, and are more important than the original variables that we eliminated. This is based on the p-values of each of their respective slopes. After performing vif and regression analysis on the dataset with our new variables we have enough evidence to include these variables in the model building stage. 
+ 
+
+
+## Price Prediction Model & Variable Selection
+
+```{r}
+library(tidyverse)
+library(readr)
+library(GGally)
+library(olsrr)
+house7<- read.csv("house_cleaned")
+
+modelAll <- lm(price~.,house7)
+backSelect <- ols_step_forward_p(modelAll)
+
+house8 <- house7 %>% 
+  select(-sqft_above,-sqft_basement,-bedsqr,-bedrooms,-yr_built,-sqft_lot15)
+write.csv(house8, "HOUSING_CLEANED")
+house8$zipcode = as.factor(house8$zipcode)
+#summary(house8)
+modelSorted <- lm(price~.,house8)
+
+
+
+library(car)
+
+trainSelect <- ols_step_forward_p(modelSorted)
+
+finalSix <- house8 %>%
+  mutate(bathsqR = ifelse(bathsqr > 0, bathsqr, .0001)) %>% 
+  select(waterfront, view, grade, zipcode, bathsqR,price, sqft_living,price) %>%
+  mutate(gradeS = grade^2, gradeL = log10(grade), 
+         baths = sqrt(bathsqR), bathL = log10(baths),
+         sqft_livingS = sqft_living^2, sqft_livingL = log10(sqft_living))
+#Split into training and testing now that we have all of our variables created
+set.seed(100)
+df<- finalSix
+training_rows <- sample(1:nrow(df), floor(0.75*nrow(df)))
+Training <- df[training_rows, ]
+Testing <- df[-training_rows, ]
+modelTrain <- lm(price~.,Training)
+modelTest <- lm(price~.,Testing)
+
+
+modelFinal <- lm(price~., finalSix)
+
+forwardSelectFinal <- ols_step_forward_p(modelFinal)
+#forwardSelectFinal
+#vif(modelFinal)
+finalSix1 <- finalSix %>% select(gradeS,zipcode,sqft_livingS, waterfront, view, bathsqR,price)
+modelFinal1 <- lm(price~., finalSix1)
+#summary(modelFinal1)
+#vif(modelFinal1)
+#waterfront, sqft
+#waterfront, view, bath, grade, year built
+finalHousingSet <- finalSix1
+plotDataset <- finalHousingSet %>% filter(price > 0)
+modelFinalUpdate <- lm(price~.,plotDataset)
+finalHousingSet1 <- finalHousingSet %>% 
+  summarize(gradeSquared = gradeS, onWater = waterfront, price = price,
+            sqftSquared = sqft_livingS, viewed = view, bathsSquared = bathsqR,
+            wealthyzipcode = ifelse(zipcode == 98003 | 
+                                      zipcode == 98022 | 
+                                      zipcode == 98023 | 
+                                      zipcode == 98070 | 
+                                      zipcode == 98092 | 
+                                      zipcode == 98198, FALSE, TRUE))
+modelZipSum <- lm(price~.,finalHousingSet1)
+finalHousingSet2 <- finalHousingSet1 %>% select(-bathsSquared)
+modelZipSum2 <- lm(price~., finalHousingSet2)
+#summary(modelZipSum2)
+finalSixPredictions <- finalHousingSet1 %>% filter(is.na(price))
+predictions <- predict.lm(modelZipSum, newdata = finalSixPredictions)
+ggplot(finalSixPredictions, aes(x = sqftSquared, y = predictions)) + geom_point(color = 'dark blue') + labs(x = "SQFT", y = "Predicted Price ($)", title = "Figure 2.1: Price vs SQFT Predictions")
+
+
+write.csv(finalHousingSet, "final_housing_set")
+Training<- Training %>%  filter(zipcode != 98010, zipcode != 98148)
+Testing<- Testing %>%  filter(zipcode != 98010, zipcode != 98148)
+trainPredictions <- predict.lm(modelFinalUpdate, newdata = Training)  
+testPredictions <- predict.lm(modelFinalUpdate, newdata = Testing)
+trainRMSE <- sqrt(mean( (trainPredictions - Training$price)^2 , na.rm=TRUE))
+testRMSE <- sqrt(mean( (testPredictions - Testing$price)^2 , na.rm=TRUE))
+ggplot(data = plotDataset, aes(x = sqft_livingS, y = price)) + geom_point(color = 'dark green') + 
+  geom_smooth(aes(x = sqft_livingS, y = modelFinalUpdate$fitted.values)) +
+  labs(x = "SQFT", y = "House Price ($)", title = "Figure 2.2: Price vs. SQFT with Final Model")
+#trainRMSE
+#testRMSE
+#Testing RMSE of 114742.7
+#Training RMSE of 137552.2
+
+
+```
+  
+  &emsp;  Once we began to fit models to our data it became clear that minor, but significant improvements could be made by adding more variables. After performing another round of variable selection we were left with Viewed, Zipcode, SQFT, House Grade and Waterfront as our variables. The data set was updated to include both a log and a square of each of our numeric variables (viewed, sqft, and grade). These variables ended up improving our model by a greater margin than the original 5 variables we selected. In the end, through VIF analysis, bedrooms and bathrooms showed high collinearity with eachother and sqft, with sqft being a much stronger predictor of pricing. The strength of both square footage and grade at predicting price was amplified when both variables were squared, leading to a more accurate model initially.
+  &emsp;  After creating additional variables in the previous step we must now select our model based on available variables. Initially we back-selected the model with all of our variables to reduce the total number of variables. Next we mutated our dataset to include a log and squared version of each of our numerical variables remaining, which are grade, the number of baths and the square footage of the house. After this we performed a forward select to reduce the number of variables and then a VIF analysis to analyze the correlation between variables.   
+  
+&emsp;    In the end, SQFT and the Grade of the house were both more accurate when squared. Our non-numerical factors that remained were the number of times the house was viewed, the zipcode of the house and whether the house was located on the waterfront.   
+&emsp;    The model was confirmed by Figure 2.1 which shows its predictions on houses that do not have pricing data. Figure 2.2 shows our model overlayed on all of the houses in our dataset.  
+  Testing RMSE : 114742.7  
+  Training RMSE : 137552.2  
+  R-Squared: .6665  
+  $Price = -193,200 + 570,300*Waterfront=TRUE + 217,100*WealthyZipcode = TRUE + 73,800*Viewed + .03*SQFT ^2 + 6,001*House Grade^2$  
+  Wealthy Zipcode: Most zipcodes, excluding the following zipcodes. Wealthy zipcode was used to add to the price of homes in most zipcodes and keep lower house value zipcodes     
+  98003  
+  98022   
+  98023   
+  98070   
+  98092   
+  98198
+    Waterfront=TRUE: A house located on the waterfront  
+      Viewed=TRUE: Number of times a house was viewed  
+  House Grade ^2: The grade of a house squared  
+    SQFT^2: The square footage of a house squared  
+&emsp;  Our model demonstrates the importance of a house being on the waterfront, the grade of the house and the zipcode the house is located in. According to the model, just being located on the waterfront and in a wealthier zipcode is worth almost $790,000 in additional house value. We can also see that SQFT of a house is important, at least according to this model. This is not initially obvious based on its coefficient (.03), but in this model we have squared square footage. If we take a 2000 and a 3000 sqft house and calculate their respective price increases we see that the 3000 sqft house will be worth \$150,000 more simply based on the difference in sqft ((3000^2 - 2000^2)*.03). We will now test our model on a few different datasets to see if this model applies to all housing sets or just this one in particular.   
+
+## Price Prediction--Houses Without Price
+
+```{r}
+
+library(tidyverse)
+library(readr)
+library(GGally)
+library(olsrr)
+house7<- read.csv("house_cleaned")
+house <- house7 %>% select(price, grade,waterfront, view, bathsqr, houseID, sqft_living, zipcode)
+house <- house %>% 
+  summarize(houseID = houseID, gradeSquared = grade^2, onWater = waterfront, price = price,
+           sqftSquared = sqft_living^2, viewed = view, 
+           wealthyzipcode = ifelse(zipcode == 98003 | 
+           zipcode == 98022 | zipcode == 98023 | 
+           zipcode == 98070 | zipcode == 98092 | 
+           zipcode == 98198, FALSE, TRUE))
+modelHouse <- lm(price~wealthyzipcode+sqftSquared+gradeSquared+onWater+viewed,house)
+#summary(modelHouse)
+houseBlank <- house %>% filter(is.na(price))
+predictions <- predict.lm(modelHouse, newdata = houseBlank)
+housePreds <- cbind(houseBlank, predictions)
+#summary(housePreds)
+hp <- housePreds %>% summarize(houseID=houseID, price = predictions)
+#head(hp)
+write.csv(hp, "Cole_Odegard")
+```
+
+## New Subset of Seattle Data
+```{r}
+
+library(tidyverse)
+library(readr)
+library(GGally)
+library(olsrr)
+house7<- read.csv("house_cleaned")
+house <- house7 %>% select(price, grade,waterfront, view, bathsqr, houseID, sqft_living, zipcode)
+house <- house %>% 
+  summarize(houseID = houseID, gradeSquared = grade^2, onWater = waterfront, price = price,
+           sqftSquared = sqft_living^2, viewed = view, 
+           wealthyzipcode = ifelse(zipcode == 98003 | 
+           zipcode == 98022 | zipcode == 98023 | 
+           zipcode == 98070 | zipcode == 98092 | 
+           zipcode == 98198, FALSE, TRUE))
+modelHouse <- lm(price~wealthyzipcode+sqftSquared+gradeSquared+onWater+viewed,house)
+#
+newSubset <- read.csv(file.choose())
+#
+newsubset1 <- newSubset %>% select(-lat)%>% select(-long) %>% 
+  select(-sqft_lot)%>% select(-yr_renovated) %>% select(-condition)
+newsubset1 <- newsubset1 %>% mutate(sqft_liv_chg = sqft_living - sqft_living15)
+newsubset1 <- newsubset1[!house6$sqft_liv_chg == "NULL",]
+newsubset1 <- newsubset1 %>% select(-sqft_living15)
+newsubset1 <- newsubset1 %>% mutate(bathsqr = bathrooms^2, bedsqr = bedrooms^2, rootLiving = sqrt(sqft_living), newBuild = ifelse(2015-yr_built <= 10, "NEW", ifelse(2015-yr_built <= 30, "AGING", "OLD")))
+newsubset1$zipcode = as.factor(newsubset1$zipcode)
+
+newsubset2 <- newsubset1 %>% select(price, grade,waterfront, view, bathsqr, houseID, sqft_living, zipcode)
+newsubset2 <- newsubset2 %>% 
+  summarize(houseID = houseID, gradeSquared = grade^2, onWater = waterfront, price = price,
+            sqftSquared = sqft_living^2, viewed = view, 
+            wealthyzipcode = ifelse(zipcode == 98003 | 
+                                      zipcode == 98022 | zipcode == 98023 | 
+                                      zipcode == 98070 | zipcode == 98092 | 
+                                      zipcode == 98198, FALSE, TRUE))
+newPredictions <- predict.lm(modelHouse, newdata = newsubset2)
+newSubsetwPredictions <- cbind(newPredictions,
+                               newsubset2)
+#summary(newSubsetwPredictions)
+ggplot(data = newSubsetwPredictions, aes(x = sqftSquared+100000, y = price)) + geom_point()+
+  geom_smooth(aes(y = newPredictions)) +
+  labs(x = "SQFT Squared", y = "Price", title = "Figure 3.1: Price vs SQFT")
+testRMSE <- sqrt(mean( (newPredictions - newSubsetwPredictions$price)^2 , na.rm=TRUE))
+
+```
+
+  RMSE:  345,014     
+&emsp;    Figure 3.1 shows the best-fit model we made in the previous section overlayed on a new set of housing data. This model has an RMSE of 345,014 which is more than twice as inaccurate as it was on our previous set of data. We can see from Figure 3.1 that the model consistently underestimates the price of housing data at least for houses up to $2,500,000. Clearly we can make revisions to our model for this updated set of data, and when we look at p-values for slope it appears that we need to use a different variable than Number of Times Viewed (p-value: .44). 
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(GGally)
+library(olsrr)
+newSubset1 <- read.csv("Cole_HousingSubset4000s.csv")
+newsubset1 <- newSubset %>% select(-lat)%>% select(-long) %>% 
+  select(-sqft_lot)%>% select(-yr_renovated) %>% select(-condition)
+newsubset1 <- newsubset1 %>% mutate(sqft_liv_chg = sqft_living - sqft_living15)
+newsubset1 <- newsubset1[!house6$sqft_liv_chg == "NULL",]
+newsubset1 <- newsubset1 %>% select(-sqft_living15)
+newsubset1 <- newsubset1 %>% mutate(bathsqr = bathrooms^2, bedsqr = bedrooms^2, rootLiving = sqrt(sqft_living), newBuild = ifelse(2015-yr_built <= 10, "NEW", ifelse(2015-yr_built <= 30, "AGING", "OLD")))
+modelNew <- lm(price~.,newsubset1)
+forselect <- ols_step_forward_p(modelNew)
+#forselect
+newsubset2 <- newsubset1 %>% select(sqft_living, waterfront, grade, yr_built, newBuild, floors, bathsqr, bedrooms, price, view)
+modelNew1 <- lm(price~.,newsubset2)
+#summary(modelNew1)
+newsubset2 <- newsubset2 %>% select(-view, -floors,-newBuild)
+modelNew1 <- lm(price~.,newsubset2)
+#summary(modelNew1)
+forselect <- ols_step_forward_p(modelNew1)
+#forselect
+modelnewUpdated <- modelNew1
+
+
+newsubset3 <- newSubset %>% select(-lat)%>% select(-long) %>% 
+  select(-sqft_lot)%>% select(-yr_renovated) %>% select(-condition)
+newsubset3 <- newsubset3 %>% mutate(sqft_liv_chg = sqft_living - sqft_living15)
+newsubset3 <- newsubset3[!house6$sqft_liv_chg == "NULL",]
+newsubset3 <- newsubset3 %>% select(-sqft_living15)
+newsubset3 <- newsubset3 %>% mutate(bathsqr = bathrooms^2, bedsqr = bedrooms^2, rootLiving = sqrt(sqft_living), newBuild = ifelse(2015-yr_built <= 10, "NEW", ifelse(2015-yr_built <= 30, "AGING", "OLD")))
+newsubset3$zipcode = as.factor(newsubset3$zipcode)
+
+newsubset3 <- newsubset3 %>% select(price, grade,waterfront, view, bathsqr, bedrooms, houseID, sqft_living, zipcode, yr_built)
+newsubset3 <- newsubset3 %>% 
+  summarize(houseID = houseID, yr_built = yr_built, grade = grade, gradeSquared = grade^2, waterfront = waterfront, price = price,
+            sqftSquared = sqft_living^2, bedrooms = bedrooms, viewed = view, sqft_living = sqft_living, bathsqr = bathsqr,
+            wealthyzipcode = ifelse(zipcode == 98003 | 
+                                      zipcode == 98022 | zipcode == 98023 | 
+                                      zipcode == 98070 | zipcode == 98092 | 
+                                      zipcode == 98198, FALSE, TRUE))
+modelHouse <- lm(price~wealthyzipcode+sqftSquared+gradeSquared+waterfront+viewed,newsubset3)
+newPredictions <- predict.lm(modelHouse, newdata = newsubset3)
+newPredictionsUpdate <- predict.lm(modelnewUpdated, newdata = newsubset3)
+newSubsetwPredictions <- cbind(newPredictions,
+                               newPredictionsUpdate,
+                               newsubset3)
+ggplot(data = newSubsetwPredictions, aes(x = sqftSquared, y = price)) + geom_point()+
+  geom_smooth(aes(y = newPredictions), color = "red") + geom_smooth(aes(y = newPredictionsUpdate), color = "green")+
+  labs(x = "SQFT Squared", y = "House Price ($)", title = "Figure 3.2: Price vs SQFT")
+
+```
+    
+  &emsp;  Figure 3.2: Model A *(red)* Model B *(green)*
+
+  Model A    
+  $Price = -193,200 + 570,300*Waterfront=TRUE + 217,100*WealthyZipcode = TRUE + 73,800*Viewed = TRUE + .03*SQFT ^2 + 6,001*House Grade^2$ 
+  Model B  
+  $Price = 7,034,417 + 322*SQFT + 723,439*Waterfront=TRUE + 118,790*House Grade - 3,925*Year Built + 19,764*Bathrooms^2 - 78,176 * Bedrooms$  
+&emsp;  Model B is our updated model based on this new set of housing data. We can see from the graph that these two models follow eachother closely for housing prices up to $2,500,000 and then diverge. When we look at the models themselves, however, they show little resemblance. Model B still uses waterfront, square footage, and grade but it does not use square footage squared or grade squared. It also adds the number of baths squared, the number of bedrooms and the year the house was built. We can see that because there are no variables squared the coefficients on each of our variables are larger. An increase in grade now results in an increase of \$118,790 to our predicted house price, versus the \$6,001 increase in price per every increase in grade squared in model A.     
+&emsp;    Even though both models have some notable differences, whether in coefficients or varible usage, the end result graphically is two models that very similarly track housing prices for most of the new data. 
+
+## Conclusion
+
+&emsp; There are a few takeaways from this project. Most importantly, it is not particularly difficult to predict the price of a house, but it is very difficult to find the *best* model to predict price. Almost half of the variation between housing prices in Seattle can be predicted by a version of house grade or house square footage. Once we added grade and square footage, however it became apparent that there are a lot of more minor factors that make different improvements in model performance. Our two main models both had grade, waterfront location and square footage, but one leaned more heavily on zipcode while the other leaned on a combination of bedrooms, bathrooms and year built. Neither is necessarily more *right* than the other, but depending on which factors you know about a house you may be more inclined to use one of them. 
+
+&emsp;  The other takeaway that we must be aware of is that the variation between housing prices in Seattle was always more accurate for lower priced homes, which depended much more on the tangible factors included in our data such as square footage and house grade. More expensive and older houses were always harder to predict because they likely depend on the intangible factors we discussed in the introductions, and are more dependent on supply and demand because there are fewer multi-million dollar homes overall. 
+
+&emsp;  Regardless of which model is used however, we were able to quantify 66-74% of the variation in each of our datasets, which is not perfectly accurate but definitely accurate enough to ballpark the value of **most** homes in the Seattle area. Again we need to be more careful when predicting the price of more expensive homes.
+
+## Bibliography
+
+&emsp;4 major factors influencing the house prices. Planning Tank. Retrieved November 1, 2022, from https://planningtank.com/real-estate/factors-influencing-house-prices 
+
+
+&emsp;Gobel, R. (2022, July 18). When to buy a home based on mortgage rates. Investopedia. Retrieved November 1, 2022, from https://www.investopedia.com/mortgage/mortgage-rates/house-price-vs-interest-rate/ 
+
+
+&emsp;Stammers, R. (2022, July 27). Top things that determine a home's value. Investopedia. Retrieved November 1, 2022, from https://www.investopedia.com/articles/mortgages-real-estate/08/housing-appreciation.asp 
+
